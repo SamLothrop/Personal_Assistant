@@ -2,6 +2,7 @@ from PyPDF2 import PdfReader
 import os
 import chromadb
 import sys, os
+from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from config.settings import CHROMA_HOST, CHROMA_PORT
 from chromadb.utils.data_loaders import ImageLoader
@@ -92,14 +93,23 @@ def store_data(documents_data, image_paths):
     
         
 def main():
-    folder_path = "./data/documents"
+    file_paths = []
     documents_data = {}
     image_paths = []
+    desktop = '../'
 
-    for file_name in os.listdir(folder_path):
-        file_path = os.path.join(folder_path, file_name)
+    for root, dirs, files in os.walk(desktop):
+        for file in files:
+            _, ext = os.path.splitext(file)
+            if ext.lower() in {'.pdf', '.txt', '.jpeg', '.jpg'}:
+                full_path = os.path.join(root, file)
+                file_paths.append(full_path)
+
+    for file_path in file_paths:
+        file_name = Path(file_path).name
         if file_path.endswith('.pdf'):
             file_content = load_file_documents_pdf(file_path)
+            file_name = Path(file_path).name
             segmented_content = segment_file_content(file_content, 500, 400)
             documents_data[file_name] = segmented_content
             print(f'Processed PDF: {file_name}')
