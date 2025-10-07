@@ -1,11 +1,12 @@
 import os
-from pathlib import Path
 
-desktop = '../'
+home_dir = os.path.expanduser("~")
+targets = [
+    os.path.join("OneDrive", "Desktop"),
+    os.path.join("OneDrive", "Documents"),
+    os.path.join('OneDrive', "Downloads")
+]
 
-for root, dirs, files in os.walk(desktop):
-    for file in files:
-        _, ext = os.path.splitext(file)
-        if ext.lower() in {'.pdf', '.txt', '.jpeg', '.jpg'}:
-            full_path = os.path.join(root, file)
-            print(f"Found: {Path(full_path).name}")
+for folder in targets:
+    target_path = os.path.join(home_dir, folder)
+    print(f"Checking: {target_path} -> {'Exists' if os.path.exists(target_path) else 'Missing'}")

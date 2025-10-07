@@ -8,6 +8,8 @@ from config.settings import CHROMA_HOST, CHROMA_PORT
 from chromadb.utils.data_loaders import ImageLoader
 from chromadb.utils.embedding_functions import OpenCLIPEmbeddingFunction
 from chromadb.config import Settings
+import re
+from PyPDF2.errors import PdfReadError
 
 chroma_client = chromadb.HttpClient(
     host=CHROMA_HOST,
@@ -22,28 +24,65 @@ collection = chroma_client.get_or_create_collection(
     data_loader=ImageLoader()
 )
 
+
+# Your existing functions
 def load_file_documents_txt(file_path):
-    with open(file_path, 'r') as file:
-        content = file.read()
-    return content
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return file.read()
+    except Exception as e:
+        print(f"Error reading TXT file {file_path}: {e}")
+        return ""
 
 def load_file_documents_pdf(file_path):
-    reader = PdfReader(file_path)
-    number_of_pages = len(reader.pages)
-    content = ''
-    for page_number in range(number_of_pages):
-        page = reader.pages[page_number]
-        content += page.extract_text()
-    return content
+    try:
+        reader = PdfReader(file_path)
+        content = ""
+        for page in reader.pages:
+            text = page.extract_text()
+            if text:
+                content += text
+        return content
+    except PdfReadError:
+        print(f"Skipping unreadable PDF: {file_path}")
+        return ""
+    except Exception as e:
+        print(f"Error reading PDF {file_path}: {e}")
+        return ""
 
-def segment_file_content(file_content, chunk_size, overlap):
+def segment_file_content(file_content, chunk_size=1000, overlap=200):
+
+    file_content = ' '.join(file_content.split())
+    
+    sentences = re.split(r'(?<=[.!?])\s+', file_content)
+    
     segmented_content = []
-    start = 0
-    while start < len(file_content):
-        end = start + chunk_size
-        segmented_content.append(file_content[start:end])
-        start = end - overlap
+    current_chunk = ""
+    
+    for sentence in sentences:
+        if len(current_chunk) + len(sentence) + 1 > chunk_size and current_chunk:
+            segmented_content.append(current_chunk.strip())
+            
+            if len(current_chunk) > overlap:
+                overlap_start = len(current_chunk) - overlap
+                overlap_text = current_chunk[overlap_start:]
+                sentence_start = overlap_text.find('. ')
+                if sentence_start != -1:
+                    overlap_text = overlap_text[sentence_start + 2:]
+                current_chunk = overlap_text + " " + sentence
+            else:
+                current_chunk = sentence
+        else:
+            if current_chunk:
+                current_chunk += " " + sentence
+            else:
+                current_chunk = sentence
+
+    if current_chunk.strip():
+        segmented_content.append(current_chunk.strip())
+    
     return segmented_content
+
 
 def store_data(documents_data, image_paths):
     if documents_data:
@@ -96,15 +135,28 @@ def main():
     file_paths = []
     documents_data = {}
     image_paths = []
-    desktop = '../'
 
-    for root, dirs, files in os.walk(desktop):
-        for file in files:
-            _, ext = os.path.splitext(file)
-            if ext.lower() in {'.pdf', '.txt', '.jpeg', '.jpg'}:
-                full_path = os.path.join(root, file)
-                file_paths.append(full_path)
+    targets = [
+    os.path.join("OneDrive", "Desktop"),
+    os.path.join("OneDrive", "Documents"),
+    "Downloads"
+]
 
+    home_dir = os.path.expanduser("~")
+
+    for folder in targets:
+        target_path = os.path.join(home_dir, folder)
+        if os.path.exists(target_path):
+            try:
+                for root, dirs, files in os.walk(target_path):
+                    for file in files:
+                        _, ext = os.path.splitext(file)
+                        if ext.lower() in {'.pdf', '.txt', '.jpeg', '.jpg'}:
+                            full_path = os.path.join(root, file)
+                            file_paths.append(full_path)
+            except PermissionError:
+                print(f"Skipping {target_path} — permission denied.")
+                
     for file_path in file_paths:
         file_name = Path(file_path).name
         if file_path.endswith('.pdf'):
@@ -112,17 +164,17 @@ def main():
             file_name = Path(file_path).name
             segmented_content = segment_file_content(file_content, 500, 400)
             documents_data[file_name] = segmented_content
-            print(f'Processed PDF: {file_name}')
+            print(f'Processed PDF: {file_path}')
             
         elif file_path.endswith('.txt'):
             file_content = load_file_documents_txt(file_path)
             segmented_content = segment_file_content(file_content, 500, 400)
             documents_data[file_name] = segmented_content
-            print(f'Processed TXT: {file_name}')
+            print(f'Processed TXT: {file_path}')
             
         elif file_path.lower().endswith(('.jpg', '.jpeg')):
             image_paths.append(file_path)
-            print(f'Found image: {file_name}')
+            print(f'Found image: {file_path}')
             
     store_data(documents_data, image_paths)
 
